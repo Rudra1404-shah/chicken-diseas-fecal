@@ -77,12 +77,14 @@ class ChickenDiseaseClassifier:
                 logger.warning("metadata.json is not valid JSON: %s", exc)
 
         if not self.model_path.exists():
-            self.load_error = (
-                f"Model file not found at {self.model_path}. Train one with "
-                f"`python -m src.train`, or copy chicken_model.keras into artifacts/."
-            )
-            logger.error(self.load_error)
+            self._download_model()
             return
+            # self.load_error = (
+            #     f"Model file not found at {self.model_path}. Train one with "
+            #     f"`python -m src.train`, or copy chicken_model.keras into artifacts/."
+            # )
+            # logger.error(self.load_error)
+            # return
 
         try:
             from tensorflow import keras
@@ -95,6 +97,19 @@ class ChickenDiseaseClassifier:
             self.load_error = f"Failed to load model: {exc}"
             logger.exception("model load failed")
 
+    def _download_model(self) -> None:
+        """Download model from GitHub releases if not found locally."""
+        import urllib.request
+        url = "https://github.com/Rudra1404-shah/chicken-diseas-fecal/raw/main/artifacts/chicken_model.keras"
+        logger.info("Downloading model from %s", url)
+        try:
+            self.model_path.parent.mkdir(exist_ok=True)
+            urllib.request.urlretrieve(url, self.model_path)
+            logger.info("Model downloaded successfully")
+            self.load()  # Retry load
+        except Exception as exc:
+            self.load_error = f"Failed to download model: {exc}"
+            logger.exception("Model download failed")
     def _warmup(self) -> None:
         """One dummy pass so the first real request isn't paying graph-build cost.
 
