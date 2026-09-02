@@ -1,0 +1,19 @@
+# Training + serving. Pinned to the versions the model was exported with:
+# a .keras file saved by 2.19 will not reliably load under a different minor.
+tensorflow==2.19.0 ; platform_machine != "arm64"
+tensorflow-macos==2.19.0 ; platform_machine == "arm64"
+keras==3.10.0
+numpy>=1.26,<2.2
+pandas>=2.0
+scikit-learn>=1.4
+pillow>=10.0
+pyyaml>=6.0
+matplotlib>=3.8
+tqdm>=4.66
+
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+
+pytest>=8.0
+httpx>=0.27
