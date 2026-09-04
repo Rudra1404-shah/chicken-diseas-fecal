@@ -76,15 +76,13 @@ class ChickenDiseaseClassifier:
             except json.JSONDecodeError as exc:
                 logger.warning("metadata.json is not valid JSON: %s", exc)
 
-        if not self.model_path.exists():
-            self._download_model()
-            return
-            # self.load_error = (
-            #     f"Model file not found at {self.model_path}. Train one with "
-            #     f"`python -m src.train`, or copy chicken_model.keras into artifacts/."
-            # )
-            # logger.error(self.load_error)
-            # return
+        if not self._is_valid_model_file():
+            logger.warning(
+                "Model file at %s is missing or not a valid .keras zip file (e.g. Git LFS pointer). Downloading...",
+                self.model_path,
+            )
+            if not self._download_model():
+                return
 
         try:
             from tensorflow import keras
@@ -93,23 +91,51 @@ class ChickenDiseaseClassifier:
             self.model = keras.models.load_model(self.model_path)
             logger.info("model loaded in %.1fs", time.time() - start)
             self._warmup()
+            self.load_error = None
         except Exception as exc:  # noqa: BLE001 — surface any load failure via /health
             self.load_error = f"Failed to load model: {exc}"
             logger.exception("model load failed")
 
-    def _download_model(self) -> None:
-        """Download model from GitHub releases if not found locally."""
-        import urllib.request
-        url = "https://github.com/Rudra1404-shah/chicken-diseas-fecal/raw/main/artifacts/chicken_model.keras"
-        logger.info("Downloading model from %s", url)
+    def _is_valid_model_file(self) -> bool:
+        """Check if the model file exists and is a valid .keras zip archive."""
+        import zipfile
+        if not self.model_path.is_file():
+            return False
+        # .keras format is a zip archive. A Git LFS pointer is a ~130 byte text file,
+        # which will fail zipfile.is_zipfile().
         try:
-            self.model_path.parent.mkdir(exist_ok=True)
-            urllib.request.urlretrieve(url, self.model_path)
-            logger.info("Model downloaded successfully")
-            self.load()  # Retry load
+            return zipfile.is_zipfile(self.model_path)
+        except Exception:
+            return False
+
+    def _download_model(self) -> bool:
+        """Download model if missing or invalid (e.g. Git LFS pointer)."""
+        import urllib.request
+        import zipfile
+
+        url = "https://github.com/Rudra1404-shah/chicken-diseas-fecal/raw/main/artifacts/chicken_model.keras"
+        logger.info("Downloading model from %s to %s", url, self.model_path)
+        try:
+            self.model_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = self.model_path.with_suffix(".tmp")
+            urllib.request.urlretrieve(url, temp_path)
+
+            if not zipfile.is_zipfile(temp_path):
+                temp_path.unlink(missing_ok=True)
+                raise ValueError("Downloaded file is not a valid .keras zip archive.")
+
+            if self.model_path.exists():
+                self.model_path.unlink()
+            temp_path.replace(self.model_path)
+            logger.info(
+                "Model downloaded and verified successfully (%.2f MB)",
+                self.model_path.stat().st_size / (1024 * 1024),
+            )
+            return True
         except Exception as exc:
             self.load_error = f"Failed to download model: {exc}"
             logger.exception("Model download failed")
+            return False
     def _warmup(self) -> None:
         """One dummy pass so the first real request isn't paying graph-build cost.
 
